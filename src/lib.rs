@@ -1,3 +1,39 @@
+//! Rust bindings to the Rain Viewer API <https://www.rainviewer.com/weather-radar-map-live.html>
+//!
+//! Provides easy access to satellite-imagery-style rain and snow radar images
+//! across the entire world.
+//!
+//! # Example
+//!
+//!```
+//! #[tokio::main]
+//! async fn main() {
+//!     // Query what data is available
+//!     let maps = rain_viewer::available().await.unwrap();
+//!
+//!     // Pick the first past entry in the past to sample
+//!     let frame = &maps.radar.past[0];
+//!
+//!     // Setup the arguments for the tile we want to access
+//!     // Parameters are x, y and zoom following the satellite imagery style
+//!     let mut args = rain_viewer::RequestArguments::new_tile(4, 7, 6).unwrap();
+//!     // Use this pretty color scheme
+//!     args.set_color(rain_viewer::ColorKind::Titan);
+//!     // Enable showing snow in addition to rain
+//!     args.set_snow(true);
+//!     // Smooth out the tile image (looks nicer from tile to tile)
+//!     args.set_smooth(false);
+//!
+//!     // Make an API call to get the time image data using our parameters
+//!     let png = rain_viewer::get_tile(maps.host.as_str(), frame.time, args)
+//!         .await
+//!         .unwrap();
+//!
+//!     //Check for PNG magic to make sure we got an image
+//!     assert_eq!(&png[0..4], &[0x89, 0x50, 0x4e, 0x47]);
+//! }
+//!```
+
 mod error;
 pub use error::*;
 
@@ -33,7 +69,6 @@ impl From<ColorKind> for u32 {
 }
 
 struct TileArguments {
-    /// The size of the
     size: u32,
     x: u32,
     y: u32,
@@ -52,17 +87,38 @@ pub struct RequestArguments {
 }
 
 impl RequestArguments {
-    pub fn new_tile(x: u32, y: u32, zoom: u32) -> Self {
-        Self {
-            inner: RequestArgumentsInner::Tile(TileArguments {
-                size: 256,
+    pub fn new_tile(x: u32, y: u32, zoom: u32) -> Result<Self, error::ParameterError> {
+        let max_coord = 2u32.pow(zoom);
+        if x >= max_coord {
+            Err(ParameterError::InvalidX(
                 x,
+                format!(
+                    "With a zoom of {}, the max value for x is {}",
+                    zoom,
+                    max_coord - 1
+                ),
+            ))
+        } else if y >= max_coord {
+            Err(ParameterError::InvalidY(
                 y,
-                zoom,
-                color: ColorKind::UniversalBlue,
-                smooth: true,
-                snow: true,
-            }),
+                format!(
+                    "With a zoom of {}, the max value for y is {}",
+                    zoom,
+                    max_coord - 1
+                ),
+            ))
+        } else {
+            Ok(Self {
+                inner: RequestArgumentsInner::Tile(TileArguments {
+                    size: 256,
+                    x,
+                    y,
+                    zoom,
+                    color: ColorKind::UniversalBlue,
+                    smooth: true,
+                    snow: true,
+                }),
+            })
         }
     }
 
@@ -110,7 +166,15 @@ impl RequestArguments {
     }
 }
 
-/// Hits the rainviewer API to obtain a single tile of rain for the world
+/// Queries the Rain Viewer API for what current and historical data is available.
+/// This function should serve as the entry point so that the caller has the correct path and time
+/// information to call [`get_tile`]
+pub async fn available() -> Result<WeatherMaps, error::Error> {
+    let res = reqwest::get("https://api.rainviewer.com/public/weather-maps.json").await?;
+    Ok(serde_json::from_str(res.text().await?.as_str())?)
+}
+
+/// Hits the Rain Viewer API to obtain a single tile of rain for the world
 ///
 ///
 ///See `https://www.rainviewer.com/api/weather-maps-api.html` for more details
@@ -135,11 +199,6 @@ pub async fn get_tile(
             }
         }
     }
-}
-
-pub async fn weather_maps() -> Result<WeatherMaps, error::Error> {
-    let res = reqwest::get("https://api.rainviewer.com/public/weather-maps.json").await?;
-    Ok(serde_json::from_str(res.text().await?.as_str())?)
 }
 
 #[derive(Deserialize)]
@@ -174,7 +233,7 @@ mod tests {
 
     #[tokio::test]
     async fn test() {
-        let maps = weather_maps().await.unwrap();
+        let maps = available().await.unwrap();
         let frame = &maps.radar.past[0];
         let args = RequestArgumentsInner::Tile(TileArguments {
             size: 256,

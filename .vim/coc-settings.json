@@ -3,6 +3,7 @@
     "Meteored",
     "Nexrad",
     "Selex",
+    "coord",
     "nowcast"
   ]
 }
