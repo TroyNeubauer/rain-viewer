@@ -36,6 +36,7 @@
 //!
 //! [`available`] is the entry point to obtaining radar imagery. This returns
 //! historical data and forecast data that is available.
+//!
 //! From there, most users call [`get_tile`] to download a PNG of a specific satellite tile.
 
 mod error;
@@ -100,6 +101,7 @@ pub struct RequestArguments {
 
 impl RequestArguments {
     /// Creates arguments struct suitable for making a radar image request for a single tile
+    ///
     /// `x` and `x` must be less than `2^zoom`, or Err(...) is returned
     pub fn new_tile(x: u32, y: u32, zoom: u32) -> Result<Self, error::ParameterError> {
         let max_coord = 2u32.pow(zoom);
@@ -202,7 +204,9 @@ pub async fn available() -> Result<WeatherMaps, error::Error> {
 }
 
 /// Hits the Rain Viewer API to obtain a single tile of rain for the world
+///
 /// `maps` is the struct returned from [`available`]
+///
 /// `frame` is the data frame indicating the moment in time to pull from
 ///
 /// See <https://www.rainviewer.com/api/weather-maps-api.html> for more details
@@ -248,6 +252,7 @@ pub struct WeatherMaps {
 }
 
 /// Base API information returned by [`available`]
+///
 /// `radar` and `satellite` contain frame objects that can be used in conjunction with [`get_tile`]
 /// to obtain a tile of imagery.
 #[derive(Deserialize)]
