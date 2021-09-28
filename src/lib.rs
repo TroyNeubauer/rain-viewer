@@ -33,6 +33,10 @@
 //!     assert_eq!(&png[0..4], &[0x89, 0x50, 0x4e, 0x47]);
 //! }
 //! ```
+//!
+//! [`available`] is the entry point to obtaining radar imagery. This returns
+//! historical data and forecast data that is available.
+//! From there, most users call [`get_tile`] to download a PNG of a specific satellite tile.
 
 mod error;
 pub use error::*;
@@ -231,10 +235,11 @@ pub struct Frame {
     /// The unix timestamp when this data was generated
     pub time: u64,
 
-    /// The path where this data can be accessed.
+    /// The path where this data can be accessed
     pub path: String,
 }
 
+/// Contains the kinds of imagery that are available
 pub struct WeatherMaps {
     host: String,
     pub past_radar: Vec<Frame>,
