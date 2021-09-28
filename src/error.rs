@@ -28,6 +28,6 @@ impl From<ParameterError> for Error {
 pub enum ParameterError {
     InvalidSize(u32, String),
     InvalidZoom(u32, String),
-    InvalidX(u32, String),
-    InvalidY(u32, String),
+    XOutOfRange(u32, String),
+    YOutOfRange(u32, String),
 }
