@@ -3,50 +3,137 @@ pub use error::*;
 
 use serde::Deserialize;
 
-pub enum RequestArguments {
-    Tile {
-        /// The size of the
-        size: u32,
-        x: u32,
-        y: u32,
-        zoom: u32,
-    },
+pub enum ColorKind {
+    BlackAndWhite,
+    Original,
+    UniversalBlue,
+    Titan,
+    TheWeatherChannel,
+    Meteored,
+    NexradLevelIII,
+    RainbowSelexIS,
+    DarkSky,
+}
+
+impl From<ColorKind> for u32 {
+    fn from(color: ColorKind) -> Self {
+        // Values obtained from: https://www.rainviewer.com/api/color-schemes.html
+        match color {
+            ColorKind::BlackAndWhite => 0,
+            ColorKind::Original => 1,
+            ColorKind::UniversalBlue => 2,
+            ColorKind::Titan => 3,
+            ColorKind::TheWeatherChannel => 4,
+            ColorKind::Meteored => 5,
+            ColorKind::NexradLevelIII => 6,
+            ColorKind::RainbowSelexIS => 7,
+            ColorKind::DarkSky => 8,
+        }
+    }
+}
+
+struct TileArguments {
+    /// The size of the
+    size: u32,
+    x: u32,
+    y: u32,
+    zoom: u32,
+    color: ColorKind,
+    smooth: bool,
+    snow: bool,
+}
+
+enum RequestArgumentsInner {
+    Tile(TileArguments),
+}
+
+pub struct RequestArguments {
+    inner: RequestArgumentsInner,
+}
+
+impl RequestArguments {
+    pub fn new_tile(x: u32, y: u32, zoom: u32) -> Self {
+        Self {
+            inner: RequestArgumentsInner::Tile(TileArguments {
+                size: 256,
+                x,
+                y,
+                zoom,
+                color: ColorKind::UniversalBlue,
+                smooth: true,
+                snow: true,
+            }),
+        }
+    }
+
+    pub fn set_size(&mut self, size: u32) -> Result<&mut Self, error::ParameterError> {
+        if size == 256 || size == 512 {
+            match &mut self.inner {
+                RequestArgumentsInner::Tile(tile) => {
+                    tile.size = size;
+                }
+            };
+            Ok(self)
+        } else {
+            Err(ParameterError::InvalidSize(
+                size,
+                "Image size must be either 256 or 512".to_owned(),
+            ))
+        }
+    }
+
+    pub fn set_smooth(&mut self, smooth: bool) -> &mut Self {
+        match &mut self.inner {
+            RequestArgumentsInner::Tile(tile) => {
+                tile.smooth = smooth;
+            }
+        };
+        self
+    }
+
+    pub fn set_snow(&mut self, snow: bool) -> &mut Self {
+        match &mut self.inner {
+            RequestArgumentsInner::Tile(tile) => {
+                tile.snow = snow;
+            }
+        };
+        self
+    }
+
+    pub fn set_color(&mut self, color: ColorKind) -> &mut Self {
+        match &mut self.inner {
+            RequestArgumentsInner::Tile(tile) => {
+                tile.color = color;
+            }
+        };
+        self
+    }
 }
 
 /// Hits the rainviewer API to obtain a single tile of rain for the world
-/// This function does no verification of the parameters
 ///
-/// time: The unix time of the radar image. The caller must know that radar images for this time
-///     otherwise this function will return a not found error when HTTP gives a 404.
-/// size: The width and height of the image, either 256 or 512. Images are always square
-/// z: The zoom of the tile within the world. See https://www.maptiler.com/google-maps-coordinates-tile-bounds-projection/
-///     for a more visual explanation of what this is.
-/// x: The x coordinate of the radar image. Must be in the range 0..2^z-1
-/// y: The y coordinate of the radar image. Must be in the range 0..2^z-1
-/// color: A color scheme id in the range 0..8. Variants listed here: https://www.rainviewer.com/api/color-schemes.html
-/// options: A options string in the format `{smooth}_{snow}`. Where smooth and snow are booleans
-///     spelled out as 0 or 1.
 ///
 ///See `https://www.rainviewer.com/api/weather-maps-api.html` for more details
-pub(crate) async fn get_tile_unchecked(
+pub async fn get_tile(
     host: &str,
     time: u64,
-    size: u32,
-    z: u32,
-    x: u32,
-    y: u32,
-    color: u32,
-    options: &str,
+    args: RequestArguments,
 ) -> Result<Vec<u8>, error::Error> {
-    let url = format!(
-        "{}/v2/radar/{}/{}/{}/{}/{}/{}/{}.png",
-        host, time, size, z, y, x, color, options,
-    );
-    println!("Requesting: {}", url);
-    let res = reqwest::get(url).await?;
-    match res.status() {
-        reqwest::StatusCode::OK => Ok(res.bytes().await?.to_vec()),
-        status => Err(Error::Http(status)),
+    match args.inner {
+        RequestArgumentsInner::Tile(args) => {
+            let options = format!("{}_{}", args.smooth as u8, args.snow as u8);
+            let color_val: u32 = args.color.into();
+            let url = format!(
+                "{}/v2/radar/{}/{}/{}/{}/{}/{}/{}.png",
+                host, time, args.size, args.zoom, args.x, args.y, color_val, options,
+            );
+            println!("Requesting: {}", url);
+            let res = reqwest::get(url).await?;
+            match res.status() {
+                reqwest::StatusCode::OK => Ok(res.bytes().await?.to_vec()),
+                status => Err(Error::Http(status)),
+            }
+        }
     }
 }
 
@@ -89,9 +176,22 @@ mod tests {
     async fn test() {
         let maps = weather_maps().await.unwrap();
         let frame = &maps.radar.past[0];
-        let png = get_tile_unchecked(maps.host.as_str(), frame.time, 256, 6, 12, 26, 2, "1_1")
-            .await
-            .unwrap();
+        let args = RequestArgumentsInner::Tile(TileArguments {
+            size: 256,
+            x: 26,
+            y: 12,
+            zoom: 6,
+            color: ColorKind::UniversalBlue,
+            smooth: true,
+            snow: true,
+        });
+        let png = get_tile(
+            maps.host.as_str(),
+            frame.time,
+            RequestArguments { inner: args },
+        )
+        .await
+        .unwrap();
 
         //Check for PNG magic
         assert_eq!(&png[0..4], &[0x89, 0x50, 0x4e, 0x47]);
