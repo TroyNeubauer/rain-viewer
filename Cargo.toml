@@ -2,7 +2,7 @@
 name = "rain_viewer"
 version = "0.1.1"
 edition = "2018"
-authors = ["Troy Neubauer <troyneubauer@gmail.com>"]
+authors = ["Troy Neubauer <troyneubauer@gmail.com>", "Luke Newcomb <newcomb.luke@protonmail.com>"]
 license = "MIT"
 documentation = "https://docs.rs/rain_viewer"
 repository = "https://github.com/TroyNeubauer/rain-viewer"
