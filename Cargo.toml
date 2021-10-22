@@ -1,7 +1,7 @@
 [package]
 name = "rain_viewer"
 version = "0.1.1"
-edition = "2018"
+edition = "2021"
 authors = ["Troy Neubauer <troyneubauer@gmail.com>", "Luke Newcomb <newcomb.luke@protonmail.com>"]
 license = "MIT"
 documentation = "https://docs.rs/rain_viewer"
