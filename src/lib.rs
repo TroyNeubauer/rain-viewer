@@ -229,7 +229,6 @@ pub async fn get_tile(
                 "{}/{}/{}/{}/{}/{}/{}/{}.png",
                 maps.host, frame.path, args.size, args.zoom, args.x, args.y, color_val, options,
             );
-            println!("Requesting: {}", url);
             let res = reqwest::get(url).await?;
             match res.status() {
                 reqwest::StatusCode::OK => Ok(res.bytes().await?.to_vec()),
