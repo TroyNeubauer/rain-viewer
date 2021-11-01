@@ -40,6 +40,7 @@
 //! From there, most users call [`get_tile`] to download a PNG of a specific satellite tile.
 
 mod error;
+
 pub use error::*;
 
 use serde::Deserialize;
@@ -191,15 +192,20 @@ impl RequestArguments {
 /// Queries the Rain Viewer API for what current and historical data is available.
 /// This function should serve as the entry point so that the caller has the correct path and time
 /// information to call [`get_tile`]
-pub async fn available() -> Result<WeatherMaps, error::Error> {
+pub async fn available() -> Result<AvailableData, error::Error> {
     let res = reqwest::get("https://api.rainviewer.com/public/weather-maps.json").await?;
-    let raw: RawWeatherMaps = serde_json::from_str(res.text().await?.as_str())?;
+    let raw: RawAvailableData = serde_json::from_str(res.text().await?.as_str())?;
 
-    Ok(WeatherMaps {
+    Ok(AvailableData {
         host: raw.host,
-        past_radar: raw.radar.past,
-        nowcast_radar: raw.radar.nowcast,
-        infrared_satellite: raw.satellite.infrared,
+        past_radar: raw.radar.past.into_iter().map(|r| r.into()).collect(),
+        nowcast_radar: raw.radar.nowcast.into_iter().map(|r| r.into()).collect(),
+        infrared_satellite: raw
+            .satellite
+            .infrared
+            .into_iter()
+            .map(|r| r.into())
+            .collect(),
     })
 }
 
@@ -211,7 +217,7 @@ pub async fn available() -> Result<WeatherMaps, error::Error> {
 ///
 /// See <https://www.rainviewer.com/api/weather-maps-api.html> for more details
 pub async fn get_tile(
-    maps: &WeatherMaps,
+    maps: &AvailableData,
     frame: &Frame,
     args: RequestArguments,
 ) -> Result<Vec<u8>, error::Error> {
@@ -234,17 +240,18 @@ pub async fn get_tile(
 }
 
 /// Indicates that radar or satellite data is available for the time given at path [`path`]
-#[derive(Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Frame {
-    /// The unix timestamp when this data was generated
-    pub time: u64,
+    /// The timestamp when this data was generated
+    pub time: chrono::NaiveDateTime,
 
     /// The path where this data can be accessed
     pub path: String,
 }
 
 /// Contains the kinds of imagery that are available
-pub struct WeatherMaps {
+#[derive(Debug, Clone)]
+pub struct AvailableData {
     host: String,
     pub past_radar: Vec<Frame>,
     pub nowcast_radar: Vec<Frame>,
@@ -257,7 +264,7 @@ pub struct WeatherMaps {
 /// to obtain a tile of imagery.
 #[derive(Deserialize)]
 #[allow(dead_code)]
-struct RawWeatherMaps {
+struct RawAvailableData {
     /// The version of Rain Viewer
     pub version: String,
     /// The unix timestamp when this response was generated
@@ -275,13 +282,33 @@ struct RawWeatherMaps {
 
 #[derive(Deserialize)]
 struct Radar {
-    past: Vec<Frame>,
-    nowcast: Vec<Frame>,
+    past: Vec<RawFrame>,
+    nowcast: Vec<RawFrame>,
 }
 
 #[derive(Deserialize)]
 struct Satellite {
-    infrared: Vec<Frame>,
+    infrared: Vec<RawFrame>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct RawFrame {
+    /// The unix timestamp when this data was generated
+    pub time: u64,
+
+    /// The path where this data can be accessed
+    pub path: String,
+}
+
+impl From<RawFrame> for Frame {
+    fn from(raw: RawFrame) -> Self {
+        use chrono::TimeZone;
+
+        Self {
+            time: chrono::Utc.timestamp(raw.time as i64, 0).naive_utc(),
+            path: raw.path,
+        }
+    }
 }
 
 #[cfg(test)]
