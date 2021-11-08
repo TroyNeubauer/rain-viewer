@@ -1,12 +1,13 @@
 #[tokio::test]
 async fn api() {
-    let maps = rain_viewer::available().await.unwrap();
+    let req = rain_viewer::WeatherRequester::new();
+    let maps = req.available().await.unwrap();
     let frame = &maps.past_radar[0];
     let mut args = rain_viewer::RequestArguments::new_tile(4, 7, 6).unwrap();
     args.set_color(rain_viewer::ColorKind::Titan);
     args.set_snow(true);
     args.set_smooth(false);
-    let png = rain_viewer::get_tile(&maps, frame, args).await.unwrap();
+    let png = req.get_tile(&maps, frame, args).await.unwrap();
 
     //Check for PNG magic
     assert_eq!(&png[0..4], &[0x89, 0x50, 0x4e, 0x47]);

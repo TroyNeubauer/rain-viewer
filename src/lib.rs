@@ -8,8 +8,10 @@
 //! ```
 //! #[tokio::main]
 //! async fn main() {
+//!     //Create requester for issuing requests
+//!     let req = rain_viewer::WeatherRequester::new();
 //!     // Query what data is available
-//!     let maps = rain_viewer::available().await.unwrap();
+//!     let maps = req.available().await.unwrap();
 //!
 //!     // Pick the first past entry in the past to sample
 //!     let frame = &maps.past_radar[0];
@@ -25,7 +27,7 @@
 //!     args.set_smooth(false);
 //!
 //!     // Make an API call to get the time image data using our parameters
-//!     let png = rain_viewer::get_tile(&maps, frame, args)
+//!     let png = req.get_tile(&maps, frame, args)
 //!         .await
 //!         .unwrap();
 //!
@@ -189,50 +191,66 @@ impl RequestArguments {
     }
 }
 
-/// Queries the Rain Viewer API for what current and historical data is available.
-/// This function should serve as the entry point so that the caller has the correct path and time
-/// information to call [`get_tile`]
-pub async fn available() -> Result<AvailableData, error::Error> {
-    let res = reqwest::get("https://api.rainviewer.com/public/weather-maps.json").await?;
-    let raw: RawAvailableData = serde_json::from_str(res.text().await?.as_str())?;
-
-    Ok(AvailableData {
-        host: raw.host,
-        past_radar: raw.radar.past.into_iter().map(|r| r.into()).collect(),
-        nowcast_radar: raw.radar.nowcast.into_iter().map(|r| r.into()).collect(),
-        infrared_satellite: raw
-            .satellite
-            .infrared
-            .into_iter()
-            .map(|r| r.into())
-            .collect(),
-    })
+pub struct WeatherRequester {
+    client: reqwest::Client,
 }
 
-/// Hits the Rain Viewer API to obtain a single tile of rain for the world
-///
-/// `maps` is the struct returned from [`available`]
-///
-/// `frame` is the data frame indicating the moment in time to pull from
-///
-/// See <https://www.rainviewer.com/api/weather-maps-api.html> for more details
-pub async fn get_tile(
-    maps: &AvailableData,
-    frame: &Frame,
-    args: RequestArguments,
-) -> Result<Vec<u8>, error::Error> {
-    match args.inner {
-        RequestArgumentsInner::Tile(args) => {
-            let options = format!("{}_{}", args.smooth as u8, args.snow as u8);
-            let color_val: u32 = args.color.into();
-            let url = format!(
-                "{}/{}/{}/{}/{}/{}/{}/{}.png",
-                maps.host, frame.path, args.size, args.zoom, args.x, args.y, color_val, options,
-            );
-            let res = reqwest::get(url).await?;
-            match res.status() {
-                reqwest::StatusCode::OK => Ok(res.bytes().await?.to_vec()),
-                status => Err(Error::Http(status)),
+impl WeatherRequester {
+    pub fn new() -> Self {
+        Self {
+            client: reqwest::Client::new(),
+        }
+    }
+    /// Queries the Rain Viewer API for what current and historical data is available.
+    /// This function should serve as the entry point so that the caller has the correct path and time
+    /// information to call [`get_tile`]
+    pub async fn available(&self) -> Result<AvailableData, error::Error> {
+        let res = self
+            .client
+            .get("https://api.rainviewer.com/public/weather-maps.json")
+            .send()
+            .await?;
+        let raw: RawAvailableData = serde_json::from_str(res.text().await?.as_str())?;
+
+        Ok(AvailableData {
+            host: raw.host,
+            past_radar: raw.radar.past.into_iter().map(|r| r.into()).collect(),
+            nowcast_radar: raw.radar.nowcast.into_iter().map(|r| r.into()).collect(),
+            infrared_satellite: raw
+                .satellite
+                .infrared
+                .into_iter()
+                .map(|r| r.into())
+                .collect(),
+        })
+    }
+
+    /// Hits the Rain Viewer API to obtain a single tile of rain for the world
+    ///
+    /// `maps` is the struct returned from [`available`]
+    ///
+    /// `frame` is the data frame indicating the moment in time to pull from
+    ///
+    /// See <https://www.rainviewer.com/api/weather-maps-api.html> for more details
+    pub async fn get_tile(
+        &self,
+        maps: &AvailableData,
+        frame: &Frame,
+        args: RequestArguments,
+    ) -> Result<Vec<u8>, error::Error> {
+        match args.inner {
+            RequestArgumentsInner::Tile(args) => {
+                let options = format!("{}_{}", args.smooth as u8, args.snow as u8);
+                let color_val: u32 = args.color.into();
+                let url = format!(
+                    "{}/{}/{}/{}/{}/{}/{}/{}.png",
+                    maps.host, frame.path, args.size, args.zoom, args.x, args.y, color_val, options,
+                );
+                let res = self.client.get(url).send().await?;
+                match res.status() {
+                    reqwest::StatusCode::OK => Ok(res.bytes().await?.to_vec()),
+                    status => Err(Error::Http(status)),
+                }
             }
         }
     }
@@ -316,7 +334,8 @@ mod tests {
 
     #[tokio::test]
     async fn test() {
-        let maps = available().await.unwrap();
+        let req = WeatherRequester::new();
+        let maps = req.available().await.unwrap();
         let frame = &maps.past_radar[0];
         let args = RequestArgumentsInner::Tile(TileArguments {
             size: 256,
@@ -327,7 +346,7 @@ mod tests {
             smooth: true,
             snow: true,
         });
-        let png = get_tile(&maps, frame, RequestArguments { inner: args })
+        let png = req.get_tile(&maps, frame, RequestArguments { inner: args })
             .await
             .unwrap();
 
