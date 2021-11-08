@@ -346,7 +346,8 @@ mod tests {
             smooth: true,
             snow: true,
         });
-        let png = req.get_tile(&maps, frame, RequestArguments { inner: args })
+        let png = req
+            .get_tile(&maps, frame, RequestArguments { inner: args })
             .await
             .unwrap();
 
